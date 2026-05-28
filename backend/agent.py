@@ -31,12 +31,27 @@ class HPIAgent:
 
     def _select_tool(self, message: str, context: dict[str, Any]) -> ToolResult:
         text = message.lower()
-        if any(word in text for word in ["roadmap", "plan", "learn", "study", "month", "week"]):
+        role_text = " ".join(
+            str(context.get(key, ""))
+            for key in ["top_role", "goal", "interests"]
+        ).lower()
+        is_role_specific = bool(context.get("top_role")) or any(
+            word in f"{text} {role_text}"
+            for word in ["barber", "hair", "hairstyle", "stylist", "salon", "fade", "cut"]
+        )
+        if any(word in text for word in ["roadmap", "plan", "learn", "study", "month", "week", "day-wise"]):
             return ToolResult("generate_roadmap", self._roadmap(context))
+        if is_role_specific and any(
+            word in text
+            for word in ["skill", "practice", "first", "photo", "image", "screenshot", "type", "style", "hairstyle", "haircut"]
+        ):
+            return ToolResult("recommend_career", self._career_recommendations(context))
         if any(word in text for word in ["career", "job", "role", "switch", "path"]):
-            return ToolResult("recommend_career", self._career_recommendations())
+            return ToolResult("recommend_career", self._career_recommendations(context))
         if any(word in text for word in ["reflect", "stuck", "challenge", "energy", "win"]):
             return ToolResult("reflect_growth", self._reflection(context))
+        if is_role_specific:
+            return ToolResult("recommend_career", self._career_recommendations(context))
         return ToolResult("analyze_profile", self._profile_analysis())
 
     def _profile_analysis(self) -> dict[str, Any]:
@@ -53,7 +68,36 @@ class HPIAgent:
             "confidence": "high",
         }
 
-    def _career_recommendations(self) -> dict[str, Any]:
+    def _career_recommendations(self, context: dict[str, Any] | None = None) -> dict[str, Any]:
+        context = context or {}
+        top_role = context.get("top_role")
+        if top_role:
+            is_hair = any(word in top_role.lower() for word in ["hair", "barber", "stylist"])
+            default_skills = (
+                ["sectioning", "clipper control", "scissor-over-comb", "face-shape consultation", "sanitation"]
+                if is_hair
+                else ["foundation skills", "practice", "portfolio proof"]
+            )
+            next_step = (
+                "Practice sectioning, one-length cuts, fade blending, and client consultation with reference photos."
+                if is_hair
+                else f"Build one small {top_role} portfolio artifact and document the process."
+            )
+            return {
+                "recommended_roles": [
+                    {
+                        "title": top_role,
+                        "match": 90,
+                        "why": f"Your latest scan points to {top_role}; focus on proof projects, guided practice, and feedback.",
+                        "skills": context.get("skills") or default_skills,
+                        "next": next_step,
+                        "difficulty": "Medium",
+                        "time": "4-12 months",
+                        "confidence": "High",
+                    }
+                ],
+                "best_first_move": next_step,
+            }
         careers = sorted(self.profile["careers"], key=lambda career: career["match"], reverse=True)[:3]
         return {
             "recommended_roles": careers,
@@ -61,29 +105,29 @@ class HPIAgent:
         }
 
     def _roadmap(self, context: dict[str, Any]) -> dict[str, Any]:
-        goal = context.get("goal") or self.profile["profile"]["goal"]
+        goal = context.get("top_role") or context.get("goal") or self.profile["profile"]["goal"]
         return {
             "goal": goal,
             "plan": [
                 {
                     "week": 1,
-                    "focus": "Backend API and agent foundations",
-                    "deliverable": "FastAPI service with dashboard and chat endpoints.",
+                    "focus": f"Core foundations for {goal}",
+                    "deliverable": "Reference notes, safety/quality checklist, and first practice artifact.",
                 },
                 {
                     "week": 2,
-                    "focus": "Tool-using agent",
-                    "deliverable": "Career, roadmap, reflection, and project recommendation tools.",
+                    "focus": "Guided drills and feedback",
+                    "deliverable": "Three practice attempts with improvement notes.",
                 },
                 {
                     "week": 3,
-                    "focus": "LLM integration and model quality checks",
-                    "deliverable": "Sample conversations, metric snapshots, and quality review notes.",
+                    "focus": "Realistic project simulation",
+                    "deliverable": "One complete portfolio-ready result.",
                 },
                 {
                     "week": 4,
                     "focus": "Portfolio polish",
-                    "deliverable": "Deployed demo, README, screenshots, and interview story.",
+                    "deliverable": "Photos/screenshots, process explanation, and next-step plan.",
                 },
             ],
         }
@@ -140,6 +184,16 @@ class HPIAgent:
         content = tool_result.content
         if tool_result.name == "recommend_career":
             top = content["recommended_roles"][0]
+            if any(word in top["title"].lower() for word in ["hair", "barber", "stylist"]):
+                skills = ", ".join(top["skills"][:4])
+                return (
+                    f"For {top['title']}, practice these first: {skills}. "
+                    "Start with clean sectioning, then one-length cutting, then fade blending, then consultation by face shape and hair type.\n\n"
+                    "Relevant references:\n"
+                    "![Sectioning and styling](https://images.unsplash.com/photo-1522336572468-97b06e8ef143?auto=format&fit=crop&w=900&q=80)\n"
+                    "![Curly hair texture](https://images.unsplash.com/photo-1595476108010-b4d1f102b1b1?auto=format&fit=crop&w=900&q=80)\n"
+                    "![Fade and clipper work](https://images.unsplash.com/photo-1621605815971-fbc98d665033?auto=format&fit=crop&w=900&q=80)"
+                )
             return (
                 f"Your strongest path is {top['title']} at {top['match']}% match. "
                 f"The practical next move is: {content['best_first_move']}"
